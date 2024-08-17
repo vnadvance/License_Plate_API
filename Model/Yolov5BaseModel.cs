@@ -84,7 +84,6 @@ namespace License_Plate_API.Model
         private Tensor<float> ExtractPixels(Bitmap image)
         {
             var bitmap = (Bitmap)image;
-
             var rectangle = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
             BitmapData bitmapData = bitmap.LockBits(rectangle, ImageLockMode.ReadOnly, bitmap.PixelFormat);
             int bytesPerPixel = Image.GetPixelFormatSize(bitmap.PixelFormat) / 8;
@@ -141,6 +140,10 @@ namespace License_Plate_API.Model
         public void Dispose()
         {
             _inferenceSession.Dispose();
+        }
+        protected float Clamp(float value, float min, float max)
+        {
+            return (value < min) ? min : (value > max) ? max : value;
         }
     }
 }

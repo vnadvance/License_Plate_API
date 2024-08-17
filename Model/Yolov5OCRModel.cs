@@ -2,20 +2,22 @@
 using Microsoft.ML.OnnxRuntime.Tensors;
 using System.Text;
 using System.Drawing;
+using System.Collections.Concurrent;
 
 namespace License_Plate_API.Model
 {
     public class Yolov5OCRModel  : Yolov5BaseModel
     {
-        private static string PLATE_NAME =
-           "#京沪津渝冀晋蒙辽吉黑苏浙皖闽赣鲁豫鄂湘粤桂琼川贵云藏陕甘青宁新" +
-           "学警港澳挂使领民航危0123456789ABCDEFGHJKLMNPQRSTUVWXYZ险品";
-
-        public Yolov5OCRModel(): base(Properties.Resources.plate_rec, "images")
+        public Yolov5OCRModel(): base(Properties.Resources.LP_ocr_nano_62, "images")
         {
+            _model.Labels.Clear();
+            SetupLabels(new string[] { 
+                "1", "2", "3", "4", "5", "6", "7", "8", "9", 
+                "A", "B", "C", "D", "E", "F", "G", "H", "K",
+                "L", "M", "N", "P", "S", "T", "U", "V", "X", "Y", "Z", "0" });
         }
 
-        public string Predict(Bitmap image, float conf_thres = 0, float iou_thres = 0)
+        public List<YoloPrediction> Predict(Bitmap image, float conf_thres = 0, float iou_thres = 0)
         {
             if (conf_thres > 0f)
             {
@@ -26,57 +28,65 @@ namespace License_Plate_API.Model
             {
                 _model.Overlap = iou_thres;
             }
-            return ParseOutput(Inference(image), image);
+            return Supress(ParseOutput(Inference(image), image));
         }
 
-        private string ParseOutput(DenseTensor<float>[] output, Bitmap image)
+        private List<YoloPrediction> ParseSigmoid(DenseTensor<float>[] output, Image image)
         {
-            int allValues = output[0].Count();
-            int[] dims = output[0].Dimensions.ToArray();
-            int crnnRows = allValues / dims[2];
-            var resultsTxt = ScoreToTextLine(output[0].AsEnumerable<float>().ToArray(), crnnRows, dims[2]);
-            return resultsTxt;
+            return new List<YoloPrediction>();
         }
-        private string ScoreToTextLine(float[] srcData, int rows, int cols)
+
+        private List<YoloPrediction> ParseDetect(DenseTensor<float> output, Image image)
         {
-            StringBuilder sb = new StringBuilder();
-            // TextLine textLine = new TextLine();
+            var result = new ConcurrentBag<YoloPrediction>();
 
-            int lastIndex = 0;
-            List<float> scores = new List<float>();
+            var (w, h) = (image.Width, image.Height); // image w and h
+            var (xGain, yGain) = (_model.Width / (float)w, _model.Height / (float)h); // x, y gains
+            var gain = Math.Min(xGain, yGain); // gain = resized / original
 
-            for (int i = 0; i < rows; i++)
+            var (xPad, yPad) = ((_model.Width - w * gain) / 2, (_model.Height - h * gain) / 2); // left, right pads
+
+            Parallel.For(0, (int)output.Length / _model.Dimensions, (i) =>
             {
-                int maxIndex = 0;
-                float maxValue = -1000F;
+                if (output[0, i, 4] <= _model.Confidence) return; // skip low obj_conf results
 
-                //do softmax
-                List<float> expList = new List<float>();
-                for (int j = 0; j < cols; j++)
+                Parallel.For(5, _model.Dimensions, (j) =>
                 {
-                    float expSingle = (float)Math.Exp(srcData[i * cols + j]);
-                    expList.Add(expSingle);
-                }
-                float partition = expList.Sum();
-                for (int j = 0; j < cols; j++)
+                    output[0, i, j] = output[0, i, j] * output[0, i, 4]; // mul_conf = obj_conf * cls_conf
+                });
+
+                Parallel.For(5, _model.Dimensions, (k) =>
                 {
-                    float softmax = expList[j] / partition;
-                    if (softmax > maxValue)
+                    if (output[0, i, k] <= _model.MulConfidence) return; // skip low mul_conf results
+
+                    float xMin = ((output[0, i, 0] - output[0, i, 2] / 2) - xPad) / gain; // unpad bbox tlx to original
+                    float yMin = ((output[0, i, 1] - output[0, i, 3] / 2) - yPad) / gain; // unpad bbox tly to original
+                    float xMax = ((output[0, i, 0] + output[0, i, 2] / 2) - xPad) / gain; // unpad bbox brx to original
+                    float yMax = ((output[0, i, 1] + output[0, i, 3] / 2) - yPad) / gain; // unpad bbox bry to original
+
+                    xMin = Clamp(xMin, 0, w - 0); // clip bbox tlx to boundaries
+                    yMin = Clamp(yMin, 0, h - 0); // clip bbox tly to boundaries
+                    xMax = Clamp(xMax, 0, w - 1); // clip bbox brx to boundaries
+                    yMax = Clamp(yMax, 0, h - 1); // clip bbox bry to boundaries
+
+                    YoloLabel label = _model.Labels[k - 5];
+                    var prediction = new YoloPrediction(label, output[0, i, k])
                     {
-                        maxValue = softmax;
-                        maxIndex = j;
-                    }
-                }
+                        xC = (output[0, i, 0] + output[0, i, 2]) / 2,
+                        yC = (output[0, i, 1] + output[0, i, 3]) / 2,
+                        Rectangle = new RectangleF(xMin, yMin, xMax - xMin, yMax - yMin)
+                    };
 
-                if (maxIndex > 0 && maxIndex < PLATE_NAME.Length && (!(i > 0 && maxIndex == lastIndex)))
-                {
-                    scores.Add(maxValue);
-                    sb.Append(PLATE_NAME[maxIndex]);
-                }
-                lastIndex = maxIndex;
-            }
+                    result.Add(prediction);
+                });
+            });
 
-            return sb.ToString();
+            return result.ToList();
         }
+        private List<YoloPrediction> ParseOutput(DenseTensor<float>[] output, Image image)
+        {
+            return _model.UseDetect ? ParseDetect(output[0], image) : ParseSigmoid(output, image);
+        }
+
     }
 }

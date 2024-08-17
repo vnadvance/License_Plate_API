@@ -124,6 +124,12 @@
   <data name="LP_detector_nano_61" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\LP_detector_nano_61.onnx;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
+  <data name="LP_ocr" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\LP_ocr.onnx;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LP_ocr_nano_62" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\LP_ocr_nano_62.onnx;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
   <data name="plate_detect" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\plate_detect.onnx;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>

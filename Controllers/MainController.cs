@@ -29,52 +29,87 @@ namespace License_Plate_API.Controllers
                 List<string> results = new List<string>();
                 var image = Image.FromStream(file.OpenReadStream());
                 var listPredict = _detectModel.Predict(image);
-                foreach (var prediction in listPredict)
+                Parallel.ForEach(listPredict, (prediction) =>
                 {
                     double score = Math.Round(prediction.Score, 2);
                     var labelRect = prediction.Rectangle;
                     var twoLayers = (labelRect.Height / labelRect.Width) > 0.5;
                     Rectangle cropArea = new Rectangle((int)labelRect.X < 0 ? 0 : (int)labelRect.X, (int)labelRect.Y < 0 ? 0 : (int)labelRect.Y, (int)labelRect.Width, (int)labelRect.Height);
-                    Bitmap bmpImage = new Bitmap(image);
-                    Bitmap bmpCrop = bmpImage.Clone(cropArea, bmpImage.PixelFormat);
+                    //  Bitmap bmpImage = new Bitmap(image);
+                    //TODO: change image library for support linux and faster crop
+                    Bitmap bmpCrop = CropImage(image, cropArea);//  bmpImage.Clone(cropArea, bmpImage.PixelFormat); 
+                    var yoloOcrpredictions = _ocrModel.Predict(bmpCrop, 0.6f);
 
-                    if (twoLayers)
+                    if (yoloOcrpredictions.Count == 0 || yoloOcrpredictions.Count < 7 || yoloOcrpredictions.Count > 10)
                     {
-                        var img_upper_H = labelRect.Height / 2;
+                        return;
+                    }
+                    List<(float[] x, string a)> centerList = new List<(float[], string)>();
+                    float ySum = 0;
+                    foreach (var bb in yoloOcrpredictions)
+                    {
+                        ySum += bb.yC;
+                        centerList.Add((new float[] { bb.xC, bb.yC }, bb.Label?.Name ?? ""));
+                    }
+                    string LPType = "1";
+                    var lPoint = centerList[0];
+                    var rPoint = centerList[0];
 
-                        var width = (int)labelRect.Width + 1;
-                        var height = (int)img_upper_H;
-                        Bitmap resultBitmap = new Bitmap(width, height);
-                        using (Graphics g = Graphics.FromImage(resultBitmap))
+                    foreach (var cp in centerList)
+                    {
+                        if (cp.x[0] < lPoint.x[0])
                         {
-                            Rectangle resultRectangle = new Rectangle(0, 0, width, height);
-                            Rectangle sourceRectangle = new Rectangle(0, 0, width, height);
-                            g.DrawImage(bmpCrop, resultRectangle, sourceRectangle, GraphicsUnit.Pixel);
+                            lPoint = cp;
                         }
-
-                        Bitmap resultBitmap1 = new Bitmap(width, height);
-                        using (Graphics g = Graphics.FromImage(resultBitmap1))
+                        if (cp.x[0] > rPoint.x[0])
                         {
-                            Rectangle resultRectangle = new Rectangle(0, 0, width, height);
-                            Rectangle sourceRectangle = new Rectangle(0, height, width, height);
-                            g.DrawImage(bmpCrop, resultRectangle, sourceRectangle, GraphicsUnit.Pixel);
+                            rPoint = cp;
                         }
-
-                        bmpCrop = JoinImage(resultBitmap, resultBitmap1);
-
-
+                        if (lPoint.x[0] != rPoint.x[0] && !CheckPointLinear(cp.x[0], cp.x[1], lPoint.x[0], lPoint.x[1], rPoint.x[0], rPoint.x[1]))
+                        {
+                            LPType = "2";
+                        }
                     }
 
-                    var yoloOcrpredictions = _ocrModel.Predict(bmpCrop);
+                    int yMean = (int)(ySum / yoloOcrpredictions.Count);
 
+                    List<(float[] x, string a)> line1 = new List<(float[] x, string a)>();
+                    List<(float[] x, string a)> line2 = new List<(float[] x, string a)>();
+                    string licensePlate = "";
 
+                    if (LPType == "2")
+                    {
+                        foreach (var c in centerList)
+                        {
+                            if (c.x[1] > yMean)
+                            {
+                                line2.Add(c);
+                            }
+                            else
+                            {
+                                line1.Add(c);
+                            }
+                        }
 
-
-                    results.Add(yoloOcrpredictions ?? "unknow");
-                }
+                        foreach (var l1 in line1.OrderBy(x => x.x[0]))
+                        {
+                            licensePlate += l1.a;
+                        }
+                        foreach (var l2 in line2.OrderBy(x => x.x[0]))
+                        {
+                            licensePlate += l2.a;
+                        }
+                    }
+                    else
+                    {
+                        foreach (var l in centerList.OrderBy(x => x.x[0]))
+                        {
+                            licensePlate += l.a;
+                        }
+                    }
+                    results.Add(licensePlate);
+                });
                 return new ResponseModelSuccess("", results);
-
-
             }
             catch(Exception e)
             {
@@ -82,24 +117,31 @@ namespace License_Plate_API.Controllers
 
             }
         }
-
-
-
-        private static Bitmap JoinImage(Image sourceImg, Image newImg)
+        public Bitmap CropImage(Image image, Rectangle cropArea)
         {
-            int imgHeight = 0, imgWidth = 0;
-
-            imgWidth = sourceImg.Width + newImg.Width;
-            imgHeight = sourceImg.Height > newImg.Height ? sourceImg.Height : newImg.Height;
-
-            Bitmap joinedBitmap = new Bitmap(imgWidth, imgHeight);
-            using (Graphics graph = Graphics.FromImage(joinedBitmap))
+            lock (image)
             {
-                graph.DrawImage(sourceImg, 0, 0, sourceImg.Width, sourceImg.Height);
+                Bitmap bmpCrop = new Bitmap(cropArea.Width, cropArea.Height);
+                using (Graphics g = Graphics.FromImage(bmpCrop))
+                {
+                    g.DrawImage(image, new Rectangle(0, 0, bmpCrop.Width, bmpCrop.Height), cropArea, GraphicsUnit.Pixel);
+                }
 
-                graph.DrawImage(newImg, sourceImg.Width, 0, newImg.Width, newImg.Height);
+                return bmpCrop;
             }
-            return joinedBitmap;
+        }
+        public static (float a, float b) LinearEquation(float x1, float y1, float x2, float y2)
+        {
+            float b = y1 - (y2 - y1) * x1 / (x2 - x1);
+            float a = (y1 - b) / x1;
+            return (a, b);
+        }
+
+        public static bool CheckPointLinear(float x, float y, float x1, float y1, float x2, float y2)
+        {
+            var (a, b) = LinearEquation(x1, y1, x2, y2);
+            float yPred = a * x + b;
+            return Math.Abs(yPred - y) <= 5; // 3 nếu model lớn
         }
     }
 }

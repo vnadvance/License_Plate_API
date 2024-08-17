@@ -9,7 +9,7 @@ namespace License_Plate_API.Model
 {
     public class Yolov5DetectModel : Yolov5BaseModel
     {
-        public Yolov5DetectModel() : base(Properties.Resources.plate_detect_v7, "input")
+        public Yolov5DetectModel() : base(Properties.Resources.LP_detector_nano_61, "images")
         {            
         }
 
@@ -80,10 +80,6 @@ namespace License_Plate_API.Model
             });
 
             return result.ToList();
-        }
-        private float Clamp(float value, float min, float max)
-        {
-            return (value < min) ? min : (value > max) ? max : value;
         }
     }
 

@@ -83,6 +83,26 @@ namespace License_Plate_API.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] LP_ocr {
+            get {
+                object obj = ResourceManager.GetObject("LP_ocr", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LP_ocr_nano_62 {
+            get {
+                object obj = ResourceManager.GetObject("LP_ocr_nano_62", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] plate_detect {
             get {
                 object obj = ResourceManager.GetObject("plate_detect", resourceCulture);
