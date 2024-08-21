@@ -8,7 +8,7 @@ namespace License_Plate_API.Model
 {
     public class Yolov5OCRModel  : Yolov5BaseModel
     {
-        public Yolov5OCRModel(): base(Properties.Resources.LP_ocr_nano_62, "images")
+        public Yolov5OCRModel(): base(Properties.Resources.LP_ocr, "images")
         {
             _model.Labels.Clear();
             SetupLabels(new string[] { 

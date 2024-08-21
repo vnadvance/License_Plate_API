@@ -117,7 +117,7 @@ namespace License_Plate_API.Controllers
 
             }
         }
-        public Bitmap CropImage(Image image, Rectangle cropArea)
+        private Bitmap CropImage(Image image, Rectangle cropArea)
         {
             lock (image)
             {
@@ -130,14 +130,14 @@ namespace License_Plate_API.Controllers
                 return bmpCrop;
             }
         }
-        public static (float a, float b) LinearEquation(float x1, float y1, float x2, float y2)
+        private (float a, float b) LinearEquation(float x1, float y1, float x2, float y2)
         {
             float b = y1 - (y2 - y1) * x1 / (x2 - x1);
             float a = (y1 - b) / x1;
             return (a, b);
         }
 
-        public static bool CheckPointLinear(float x, float y, float x1, float y1, float x2, float y2)
+        private bool CheckPointLinear(float x, float y, float x1, float y1, float x2, float y2)
         {
             var (a, b) = LinearEquation(x1, y1, x2, y2);
             float yPred = a * x + b;
