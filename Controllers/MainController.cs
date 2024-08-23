@@ -1,4 +1,5 @@
 ﻿using License_Plate_API.Model;
+using License_Plate_API.Utils;
 using Microsoft.AspNetCore.Mvc;
 using System.Drawing;
 
@@ -37,7 +38,7 @@ namespace License_Plate_API.Controllers
                     Rectangle cropArea = new Rectangle((int)labelRect.X < 0 ? 0 : (int)labelRect.X, (int)labelRect.Y < 0 ? 0 : (int)labelRect.Y, (int)labelRect.Width, (int)labelRect.Height);
                     //  Bitmap bmpImage = new Bitmap(image);
                     //TODO: change image library for support linux and faster crop
-                    Bitmap bmpCrop = CropImage(image, cropArea);//  bmpImage.Clone(cropArea, bmpImage.PixelFormat); 
+                    Bitmap bmpCrop = Utility.CropImage(image, cropArea);//  bmpImage.Clone(cropArea, bmpImage.PixelFormat); 
                     var yoloOcrpredictions = _ocrModel.Predict(bmpCrop, 0.6f);
 
                     if (yoloOcrpredictions.Count == 0 || yoloOcrpredictions.Count < 7 || yoloOcrpredictions.Count > 10)
@@ -65,7 +66,7 @@ namespace License_Plate_API.Controllers
                         {
                             rPoint = cp;
                         }
-                        if (lPoint.x[0] != rPoint.x[0] && !CheckPointLinear(cp.x[0], cp.x[1], lPoint.x[0], lPoint.x[1], rPoint.x[0], rPoint.x[1]))
+                        if (lPoint.x[0] != rPoint.x[0] && !Utility.CheckPointLinear(cp.x[0], cp.x[1], lPoint.x[0], lPoint.x[1], rPoint.x[0], rPoint.x[1]))
                         {
                             LPType = "2";
                         }
@@ -116,32 +117,6 @@ namespace License_Plate_API.Controllers
                 return new ResponseModelError("Error " + e.Message);
 
             }
-        }
-        private Bitmap CropImage(Image image, Rectangle cropArea)
-        {
-            lock (image)
-            {
-                Bitmap bmpCrop = new Bitmap(cropArea.Width, cropArea.Height);
-                using (Graphics g = Graphics.FromImage(bmpCrop))
-                {
-                    g.DrawImage(image, new Rectangle(0, 0, bmpCrop.Width, bmpCrop.Height), cropArea, GraphicsUnit.Pixel);
-                }
-
-                return bmpCrop;
-            }
-        }
-        private (float a, float b) LinearEquation(float x1, float y1, float x2, float y2)
-        {
-            float b = y1 - (y2 - y1) * x1 / (x2 - x1);
-            float a = (y1 - b) / x1;
-            return (a, b);
-        }
-
-        private bool CheckPointLinear(float x, float y, float x1, float y1, float x2, float y2)
-        {
-            var (a, b) = LinearEquation(x1, y1, x2, y2);
-            float yPred = a * x + b;
-            return Math.Abs(yPred - y) <= 5; // 3 nếu model lớn
         }
     }
 }

@@ -1,10 +1,10 @@
-﻿using System.Drawing.Drawing2D;
+﻿using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Drawing;
 
 namespace License_Plate_API.Utils
 {
-    public static class ImageUtils
+    public class Utility
     {
         public static Bitmap ResizeImage(Image image, int target_width, int target_height)
         {
@@ -31,6 +31,32 @@ namespace License_Plate_API.Utils
             }
 
             return output;
+        }
+        public static Bitmap CropImage(Image image, Rectangle cropArea)
+        {
+            lock (image)
+            {
+                Bitmap bmpCrop = new Bitmap(cropArea.Width, cropArea.Height);
+                using (Graphics g = Graphics.FromImage(bmpCrop))
+                {
+                    g.DrawImage(image, new Rectangle(0, 0, bmpCrop.Width, bmpCrop.Height), cropArea, GraphicsUnit.Pixel);
+                }
+
+                return bmpCrop;
+            }
+        }
+        public static (float a, float b) LinearEquation(float x1, float y1, float x2, float y2)
+        {
+            float b = y1 - (y2 - y1) * x1 / (x2 - x1);
+            float a = (y1 - b) / x1;
+            return (a, b);
+        }
+
+        public static bool CheckPointLinear(float x, float y, float x1, float y1, float x2, float y2)
+        {
+            var (a, b) = LinearEquation(x1, y1, x2, y2);
+            float yPred = a * x + b;
+            return Math.Abs(yPred - y) <= 5; // 3 nếu model lớn
         }
     }
 }

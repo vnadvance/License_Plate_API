@@ -27,7 +27,7 @@ namespace License_Plate_API.Model
             Bitmap resized;
             if (img.Width != _model.Width || img.Height != _model.Height)
             {
-                resized = ImageUtils.ResizeImage(img, _model.Width, _model.Height); // fit image size to specified input size
+                resized = Utility.ResizeImage(img, _model.Width, _model.Height); // fit image size to specified input size
             }
             else
             {
