@@ -1,11 +1,34 @@
 ﻿using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.IO;
+using System.Reflection;
 
 namespace License_Plate_API.Utils
 {
     public class Utility
     {
+        private static string _path = string.Empty;
+        static Utility()
+        {
+            _path = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "";
+        }
+
+        public static void saveImage(byte[] image,string gatename,string computername, string filename)
+        {
+            DateTime now = DateTime.Now;
+            string savePath =  string.Join(Path.DirectorySeparatorChar, 
+                _path,
+                gatename,
+                computername,
+                now.ToString("yyyy"),
+                now.ToString("MM"),
+                now.ToString("dd"),
+                "");
+            Directory.CreateDirectory(savePath);
+            File.WriteAllBytes(savePath + now.ToString("HHmm") + "-" +  filename, image);
+        }
+
         public static Bitmap ResizeImage(Image image, int target_width, int target_height)
         {
             PixelFormat format = image.PixelFormat;

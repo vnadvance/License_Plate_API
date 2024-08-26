@@ -19,7 +19,7 @@ namespace License_Plate_API.Controllers
             _ocrModel = ocrModel;
         }
         [HttpPost("predict")]
-        public ResponseModel predictAsync(IFormFile file)
+        public ResponseModel predictAsync(IFormFile file, [FromForm] string gatename, [FromForm] string computername)
         {
             try
             {
@@ -28,8 +28,15 @@ namespace License_Plate_API.Controllers
                     return new ResponseModelError("Vui lòng nhập file");
                 }
                 List<string> results = new List<string>();
-                var image = Image.FromStream(file.OpenReadStream());
+                var stream = file.OpenReadStream();
+                var image = Image.FromStream(stream);
                 var listPredict = _detectModel.Predict(image);
+                var mem = new MemoryStream();
+                _ = Task.Run(() =>
+                {
+                    stream.Seek(0, SeekOrigin.Begin);
+                    stream.CopyTo(mem);
+                });
                 Parallel.ForEach(listPredict, (prediction) =>
                 {
                     double score = Math.Round(prediction.Score, 2);
@@ -39,7 +46,7 @@ namespace License_Plate_API.Controllers
                     //  Bitmap bmpImage = new Bitmap(image);
                     //TODO: change image library for support linux and faster crop
                     Bitmap bmpCrop = Utility.CropImage(image, cropArea);//  bmpImage.Clone(cropArea, bmpImage.PixelFormat); 
-                    var yoloOcrpredictions = _ocrModel.Predict(bmpCrop, 0.6f);
+                    var yoloOcrpredictions = _ocrModel.Predict(bmpCrop, 0.5f);
 
                     if (yoloOcrpredictions.Count == 0 || yoloOcrpredictions.Count < 7 || yoloOcrpredictions.Count > 10)
                     {
@@ -109,6 +116,13 @@ namespace License_Plate_API.Controllers
                         }
                     }
                     results.Add(licensePlate);
+                });
+                _ = Task.Run(() =>
+                {
+                    Utility.saveImage(mem.ToArray(), 
+                        gatename, 
+                        computername, 
+                        string.Join("_", results) + Path.GetExtension(file.FileName));
                 });
                 return new ResponseModelSuccess("", results);
             }
