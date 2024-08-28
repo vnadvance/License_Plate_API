@@ -6,7 +6,7 @@ namespace License_Plate_API.Model
     public class YoloPrediction
     {
         public YoloLabel? Label { get; set; }
-        public RectangleF Rectangle { get; set; }
+        public SixLabors.ImageSharp.RectangleF Rectangle { get; set; }
         public float Score { get; set; }
         public float xC { get; set; }
         public float yC { get; set; }

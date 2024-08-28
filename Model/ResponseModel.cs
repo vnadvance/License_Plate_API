@@ -6,19 +6,20 @@ namespace License_Plate_API.Model
     public class ResponseModel
     {
         public string? Status { get; set; }
-        public string? Messenge { get; set; }
-        public string? Data { get; set; }
+        public string? Message { get; set; }
+        public List<ResultModel>? Data { get; set; }
+        public string? RootImagePath { get; set; }
         public ResponseModel() { }
-        public ResponseModel(string status, string messenge, Object data)
+        public ResponseModel(string status, string message, List<ResultModel> data)
         {
             Status = status;
-            Messenge = messenge;
-            Data = JsonConvert.SerializeObject(data);
+            Message = message;
+            Data = data;
         }
-        public ResponseModel(string status, string messenge)
+        public ResponseModel(string status, string message)
         {
             Status = status;
-            Messenge = messenge;
+            Message = message;
             Data = null;
         }
     }
@@ -28,11 +29,12 @@ namespace License_Plate_API.Model
         {
         }
 
-        public ResponseModelSuccess(string messenge, Object? data = null)
+        public ResponseModelSuccess(string message, List<ResultModel>? data = null,string? rootImage = null)
         {
             Status = "OK";
-            Messenge = messenge;
-            Data = JsonConvert.SerializeObject(data);
+            Message = message;
+            Data = data;
+            RootImagePath = rootImage;
         }
     }
     public class ResponseModelError : ResponseModel
@@ -41,11 +43,11 @@ namespace License_Plate_API.Model
         {
         }
 
-        public ResponseModelError(string messenge, Object? data = null)
+        public ResponseModelError(string message, List<ResultModel>? data = null)
         {
             Status = "Error";
-            Messenge = messenge;
-            Data = JsonConvert.SerializeObject(data);
+            Message = message;
+            Data = data;
         }
     }
 }

@@ -1,10 +1,9 @@
 ﻿using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using License_Plate_API.Utils;
-using System.Drawing;
-using OpenCvSharp.Extensions;
-using OpenCvSharp;
-using System.Drawing.Imaging;
+using System.Collections.Concurrent;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp;
 
 namespace License_Plate_API.Model
 {
@@ -22,16 +21,16 @@ namespace License_Plate_API.Model
             });
         }
 
-        public DenseTensor<float>[] Inference(Image img)
+        private DenseTensor<float>[] Inference(Image<Rgba32> img)
         {
-            Bitmap resized;
+            Image<Rgba32> resized;
             if (img.Width != _model.Width || img.Height != _model.Height)
             {
-                resized = Utility.ResizeImage(img, _model.Width, _model.Height); // fit image size to specified input size
+                resized = Utility.ResizeImage(img.Clone(), _model.Width, _model.Height); // fit image size to specified input size
             }
             else
             {
-                resized = new Bitmap(img);
+                resized = img;
             }
             var inputs = new List<NamedOnnxValue> // add image as input
             {
@@ -50,7 +49,7 @@ namespace License_Plate_API.Model
 
             return output.ToArray();
         }
-        protected List<YoloPrediction> Supress(List<YoloPrediction> items)
+        private List<YoloPrediction> Supress(List<YoloPrediction> items)
         {
             var result = new List<YoloPrediction>(items);
             foreach (var item in items)
@@ -62,7 +61,7 @@ namespace License_Plate_API.Model
                     var (rect1, rect2) = (item.Rectangle, current.Rectangle);
 
 
-                    RectangleF intersection = RectangleF.Intersect(rect1, rect2);
+                    SixLabors.ImageSharp.RectangleF intersection = SixLabors.ImageSharp.RectangleF.Intersect(rect1, rect2);
 
                     float intArea = intersection.Area();
 
@@ -81,31 +80,25 @@ namespace License_Plate_API.Model
             }
             return result;
         }
-        private Tensor<float> ExtractPixels(Bitmap image)
+        private Tensor<float> ExtractPixels(Image<Rgba32> image)
         {
-            var bitmap = (Bitmap)image;
-            var rectangle = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
-            BitmapData bitmapData = bitmap.LockBits(rectangle, ImageLockMode.ReadOnly, bitmap.PixelFormat);
-            int bytesPerPixel = Image.GetPixelFormatSize(bitmap.PixelFormat) / 8;
+            int width = image.Width;
+            int height = image.Height;
 
-            var tensor = new DenseTensor<float>(new[] { 1, 3, bitmap.Height, bitmap.Width });
+            // Create a tensor with the same dimensions as the image
+            var tensor = new DenseTensor<float>(new[] { 1, 3, height, width });
 
-            unsafe // speed up conversion by direct work with memory
+            // Process the image row by row
+            Parallel.For(0, image.Height, y =>
             {
-                Parallel.For(0, bitmapData.Height, (y) =>
+                Parallel.For(0, image.Width, x =>
                 {
-                    byte* row = (byte*)bitmapData.Scan0 + (y * bitmapData.Stride);
-
-                    Parallel.For(0, bitmapData.Width, (x) =>
-                    {
-                        tensor[0, 0, y, x] = row[x * bytesPerPixel + 2] / 255.0F; // r
-                        tensor[0, 1, y, x] = row[x * bytesPerPixel + 1] / 255.0F; // g
-                        tensor[0, 2, y, x] = row[x * bytesPerPixel + 0] / 255.0F; // b
-                    });
+                    tensor[0, 0, y, x] = image[x, y].R / 255.0F; // r
+                    tensor[0, 1, y, x] = image[x, y].G / 255.0F; // g
+                    tensor[0, 2, y, x] = image[x, y].B / 255.0F; // b
                 });
+            });
 
-                bitmap.UnlockBits(bitmapData);
-            }
             return tensor;
         }
         public void SetupYoloDefaultLabels()
@@ -141,9 +134,80 @@ namespace License_Plate_API.Model
         {
             _inferenceSession.Dispose();
         }
-        protected float Clamp(float value, float min, float max)
+        private float Clamp(float value, float min, float max)
         {
             return (value < min) ? min : (value > max) ? max : value;
+        }
+
+        private List<YoloPrediction> ParseDetect(DenseTensor<float> output, Image<Rgba32> image)
+        {
+            var result = new ConcurrentBag<YoloPrediction>();
+
+            var (w, h) = (image.Width, image.Height); // image w and h
+            var (xGain, yGain) = (_model.Width / (float)w, _model.Height / (float)h); // x, y gains
+            var gain = Math.Min(xGain, yGain); // gain = resized / original
+
+            var (xPad, yPad) = ((_model.Width - w * gain) / 2, (_model.Height - h * gain) / 2); // left, right pads
+
+            Parallel.For(0, (int)output.Length / _model.Dimensions, (i) =>
+            {
+                if (output[0, i, 4] <= _model.Confidence) return; // skip low obj_conf results
+
+                Parallel.For(5, _model.Dimensions, (j) =>
+                {
+                    output[0, i, j] = output[0, i, j] * output[0, i, 4]; // mul_conf = obj_conf * cls_conf
+                });
+
+                Parallel.For(5, _model.Dimensions, (k) =>
+                {
+                    if (output[0, i, k] <= _model.MulConfidence) return; // skip low mul_conf results
+
+                    float xMin = ((output[0, i, 0] - output[0, i, 2] / 2) - xPad) / gain; // unpad bbox tlx to original
+                    float yMin = ((output[0, i, 1] - output[0, i, 3] / 2) - yPad) / gain; // unpad bbox tly to original
+                    float xMax = ((output[0, i, 0] + output[0, i, 2] / 2) - xPad) / gain; // unpad bbox brx to original
+                    float yMax = ((output[0, i, 1] + output[0, i, 3] / 2) - yPad) / gain; // unpad bbox bry to original
+
+                    xMin = Clamp(xMin, 0, w - 0); // clip bbox tlx to boundaries
+                    yMin = Clamp(yMin, 0, h - 0); // clip bbox tly to boundaries
+                    xMax = Clamp(xMax, 0, w - 1); // clip bbox brx to boundaries
+                    yMax = Clamp(yMax, 0, h - 1); // clip bbox bry to boundaries
+
+                    YoloLabel label = _model.Labels[k - 5];
+
+                    var prediction = new YoloPrediction(label, output[0, i, k])
+                    {
+                        xC = (output[0, i, 0] + output[0, i, 2]) / 2,
+                        yC = (output[0, i, 1] + output[0, i, 3]) / 2,
+                        Rectangle = new SixLabors.ImageSharp.RectangleF(xMin, yMin, xMax - xMin, yMax - yMin)
+                    };
+
+                    result.Add(prediction);
+                });
+            });
+
+            return result.ToList();
+        }
+        private List<YoloPrediction> ParseSigmoid(DenseTensor<float>[] output, SixLabors.ImageSharp.Image image)
+        {
+            return new List<YoloPrediction>();
+        }
+        public List<YoloPrediction> Predict(Image<Rgba32> image, float conf_thres = 0, float iou_thres = 0)
+        {
+            if (conf_thres > 0f)
+            {
+                _model.Confidence = conf_thres;
+                _model.MulConfidence = conf_thres + 0.05f;
+            }
+            if (iou_thres > 0f)
+            {
+                _model.Overlap = iou_thres;
+            }
+            return Supress(ParseOutput(Inference(image), image));
+        }
+
+        private List<YoloPrediction> ParseOutput(DenseTensor<float>[] output, Image<Rgba32> image)
+        {
+            return _model.UseDetect ? ParseDetect(output[0], image) : ParseSigmoid(output, image);
         }
     }
 }
